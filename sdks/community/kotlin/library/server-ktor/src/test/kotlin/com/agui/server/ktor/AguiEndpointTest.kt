@@ -115,4 +115,48 @@ class AguiEndpointTest {
         assertEquals(EventType.RUN_ERROR, error.eventType)
         assertEquals("mid-stream boom", error.message)
     }
+
+    /** Emits RUN_STARTED -> its OWN terminal (RUN_FINISHED) -> then throws (B-1). */
+    private fun terminalThenThrowAgent() = AgUiAgent { input ->
+        flow {
+            emit(EventFactory.runStarted(input.threadId, input.runId))
+            emit(EventFactory.runFinished(input.threadId, input.runId))
+            throw RuntimeException("throw after terminal")
+        }
+    }
+
+    @Test
+    fun failureAfterOwnTerminalDoesNotAppendSecondTerminal() = testApplication {
+        application {
+            routing {
+                aguiEndpoint(agent = terminalThenThrowAgent())
+            }
+        }
+
+        val requestBody = AgUiJson.encodeToString(
+            RunAgentInput(threadId = "thread-1", runId = "run-1")
+        )
+
+        val response = client.post("/agents/agent-x/run") {
+            setBody(requestBody)
+        }
+
+        val sseBody = response.bodyAsText()
+
+        val dataPayloads = sseBody.lineSequence()
+            .filter { it.startsWith("data:") }
+            .map { it.removePrefix("data:").trim() }
+            .toList()
+
+        val events = SseParser().parseFlow(dataPayloads.asFlow()).toList()
+
+        // The agent already forwarded its own terminal, so NO synthetic RUN_ERROR
+        // must be appended: exactly one terminal event on the wire.
+        val terminals = events.count {
+            it.eventType == EventType.RUN_FINISHED || it.eventType == EventType.RUN_ERROR
+        }
+        assertEquals(1, terminals, "expected exactly one terminal, body was: $sseBody")
+        assertEquals(EventType.RUN_STARTED, events.first().eventType)
+        assertEquals(EventType.RUN_FINISHED, events.last().eventType)
+    }
 }
