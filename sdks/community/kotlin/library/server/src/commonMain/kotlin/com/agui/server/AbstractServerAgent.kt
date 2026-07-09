@@ -20,6 +20,19 @@ import kotlinx.coroutines.flow.channelFlow
  * The imperative [run] may emit synchronously before returning, or hand the
  * [EventEmitter] to another thread and return early: the flow stays open until
  * [EventEmitter.complete] or [EventEmitter.error] is called.
+ *
+ * ### Backpressure / burst caveat
+ * [EventEmitter.emit] bridges into the flow via [trySendBlocking], which *blocks
+ * the calling thread* until the channel has capacity. If a subclass emits
+ * **synchronously on the collecting coroutine** (i.e. it runs inline in [run]
+ * without switching threads) and bursts **more events than the [channelFlow]
+ * buffer holds before returning**, it can block — and on a confined /
+ * single-threaded dispatcher (where the collector shares that one thread) it can
+ * deadlock, since no one is draining the channel while [run] is blocked. The
+ * buffer here is the `channelFlow` default (`Channel.BUFFERED`, 64 events), so
+ * small synchronous sequences are safe. For large synchronous bursts, hand the
+ * [EventEmitter] to another thread (emit off-thread) so the collector can drain
+ * concurrently.
  */
 abstract class AbstractServerAgent : AgUiAgent {
 

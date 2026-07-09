@@ -1,9 +1,14 @@
 package com.agui.server
 
 import com.agui.core.types.*
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class EventFactoryTest {
 
@@ -94,5 +99,67 @@ class EventFactoryTest {
         val e = EventFactory.runError("boom")
         assertEquals(EventType.RUN_ERROR, e.eventType)
         assertEquals("boom", e.message)
+        assertNull(e.code)
+    }
+
+    @Test
+    fun runErrorWithCode() {
+        val e = EventFactory.runError("boom", "E_BOOM")
+        assertEquals("boom", e.message)
+        assertEquals("E_BOOM", e.code)
+    }
+
+    @Test
+    fun runFinishedWithResultAndOutcome() {
+        val result = JsonPrimitive("ok")
+        val e = EventFactory.runFinished("t", "r", result, RunFinishedSuccessOutcome)
+        assertEquals(EventType.RUN_FINISHED, e.eventType)
+        assertEquals("t", e.threadId)
+        assertEquals("r", e.runId)
+        assertEquals(result, e.result)
+        assertSame(RunFinishedSuccessOutcome, e.outcome)
+    }
+
+    @Test
+    fun runFinishedTwoArgHasNoResultOrOutcome() {
+        val e = EventFactory.runFinished("t", "r")
+        assertNull(e.result)
+        assertNull(e.outcome)
+    }
+
+    @Test
+    fun stepStartedAndFinished() {
+        val started = EventFactory.stepStarted("plan")
+        assertEquals(EventType.STEP_STARTED, started.eventType)
+        assertEquals("plan", started.stepName)
+
+        val finished = EventFactory.stepFinished("plan")
+        assertEquals(EventType.STEP_FINISHED, finished.eventType)
+        assertEquals("plan", finished.stepName)
+    }
+
+    @Test
+    fun stateSnapshot() {
+        val snapshot: State = JsonPrimitive("s")
+        val e = EventFactory.stateSnapshot(snapshot)
+        assertEquals(EventType.STATE_SNAPSHOT, e.eventType)
+        assertEquals(snapshot, e.snapshot)
+    }
+
+    @Test
+    fun stateDelta() {
+        val delta: JsonArray = buildJsonArray { add(JsonPrimitive("patch")) }
+        val e = EventFactory.stateDelta(delta)
+        assertEquals(EventType.STATE_DELTA, e.eventType)
+        assertEquals(delta, e.delta)
+    }
+
+    @Test
+    fun messagesSnapshot() {
+        val messages = listOf(UserMessage(id = "u1", content = "hi"))
+        val e = EventFactory.messagesSnapshot(messages)
+        assertEquals(EventType.MESSAGES_SNAPSHOT, e.eventType)
+        assertEquals(1, e.messages.size)
+        assertTrue(e.messages.first() is UserMessage)
     }
 }

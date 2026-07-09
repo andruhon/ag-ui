@@ -10,10 +10,12 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.flow.flowOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class AguiEndpointTest {
 
@@ -70,5 +72,47 @@ class AguiEndpointTest {
         assertEquals(EventType.RUN_FINISHED, finished.eventType)
         assertEquals("thread-1", finished.threadId)
         assertEquals("run-1", finished.runId)
+    }
+
+    /** Emits RUN_STARTED then throws mid-stream (A1). */
+    private fun failingAgent() = AgUiAgent { input ->
+        flow {
+            emit(EventFactory.runStarted(input.threadId, input.runId))
+            throw RuntimeException("mid-stream boom")
+        }
+    }
+
+    @Test
+    fun midStreamFailureEndsWithParseableRunError() = testApplication {
+        application {
+            routing {
+                aguiEndpoint(agent = failingAgent())
+            }
+        }
+
+        val requestBody = AgUiJson.encodeToString(
+            RunAgentInput(threadId = "thread-1", runId = "run-1")
+        )
+
+        val response = client.post("/agents/agent-x/run") {
+            setBody(requestBody)
+        }
+
+        val sseBody = response.bodyAsText()
+
+        val dataPayloads = sseBody.lineSequence()
+            .filter { it.startsWith("data:") }
+            .map { it.removePrefix("data:").trim() }
+            .toList()
+
+        val events = SseParser().parseFlow(dataPayloads.asFlow()).toList()
+
+        // The stream must be well-formed and terminate with RUN_ERROR, not truncate.
+        assertTrue(events.isNotEmpty(), "expected at least one event, body was: $sseBody")
+        assertEquals(EventType.RUN_STARTED, events.first().eventType)
+
+        val error = events.last() as RunErrorEvent
+        assertEquals(EventType.RUN_ERROR, error.eventType)
+        assertEquals("mid-stream boom", error.message)
     }
 }

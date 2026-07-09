@@ -25,14 +25,18 @@ object SseEncoder {
         "data: " + AgUiJson.encodeToString(event) + "\n\n"
 
     /**
-     * The payload a Spring `SseEmitter.event().data(...)` should be given:
-     * `" " + json`, reproducing the Java server's leading-space quirk
-     * byte-for-byte (see `AgUiService`).
+     * The `.data(...)` payload for a framework SSE emitter that writes the `data:`
+     * prefix **without** the conventional single post-colon space: `" " + json`.
      *
-     * The Spring `SseEmitter` adds the `data:` prefix and the trailing blank line
-     * itself; passing the space-prefixed JSON here yields a `data:  {json}`
-     * line on the wire that `@ag-ui/client` parses as `" {json}"` and trims. Use
-     * [encode] instead for a raw writer transport.
+     * Spring MVC's `SseEmitter.event().data(x)` emits the line as `data:x` (no
+     * space after the colon), so the payload must carry the leading space itself
+     * to produce the on-the-wire line `data: {json}` that `@ag-ui/client` parses.
+     * This helper supplies exactly that payload (used by BE-1's ADK Spring demo,
+     * which drives a Spring `SseEmitter`).
+     *
+     * This is NOT the canonical wire form — the canonical SSE framing is produced
+     * by [encode], which is what the live Ktor path (`respondBytesWriter`) writes.
+     * Use [encodeData] only when a space-omitting emitter frames the line for you.
      */
     fun encodeData(event: BaseEvent): String =
         " " + AgUiJson.encodeToString(event)

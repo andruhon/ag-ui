@@ -112,9 +112,9 @@ signing {
     }
 }
 
-tasks.withType<Test> {
-    useJUnitPlatform()
-}
+// JUnit Platform is configured once, in the `jvm { testRuns["test"] }` block above
+// (and inherited from the root `subprojects { tasks.withType<Test> }`), so no
+// module-level `tasks.withType<Test>` block is needed here.
 
 // KMP modules expose `jvmTest`/`allTests` rather than the plain `test` lifecycle
 // task. Provide a `test` alias so `:kotlin-server:test` works like the plain-JVM
