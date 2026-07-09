@@ -3,11 +3,12 @@ package com.agui.server.ktor
 import com.agui.core.types.AgUiJson
 import com.agui.core.types.EventType
 import com.agui.core.types.RunAgentInput
+import com.agui.encoder.EventEncoder
 import com.agui.server.AgUiAgent
 import com.agui.server.EventFactory
-import com.agui.server.SseEncoder
 import com.agui.server.verify.verifyEvents
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondBytesWriter
 import io.ktor.server.routing.Route
@@ -20,8 +21,12 @@ import kotlinx.coroutines.flow.collect
  * Registers an AG-UI agent endpoint on this [Route].
  *
  * The endpoint accepts a POST whose body is a JSON [RunAgentInput], runs [agent],
- * verifies the event ordering, and streams each event to the client as canonical
- * Server-Sent Events (`data: <json>\n\n`).
+ * verifies the event ordering, and streams each event to the client. Content-type
+ * negotiation and framing are delegated to a per-request [EventEncoder] built from
+ * the client's `Accept` header (mirroring the reference servers: Python
+ * `EventEncoder(accept=...)`, gaunt-sloth `new EventEncoder({ accept })`). Today
+ * that always yields canonical SSE (`data: <json>\n\n`); protobuf is a future TODO
+ * in [EventEncoder].
  *
  * We use [respondBytesWriter] rather than the `ktor-server-sse` `sse { }` DSL
  * because that DSL is GET-oriented, whereas AG-UI drives the run from a POST body.
@@ -44,11 +49,12 @@ fun Route.aguiEndpoint(path: String = "/agents/{agentId}/run", agent: AgUiAgent)
     post(path) {
         // Decode BEFORE opening the writer: a malformed body becomes a proper HTTP error.
         val input = AgUiJson.decodeFromString<RunAgentInput>(call.receiveText())
-        call.respondBytesWriter(contentType = ContentType.parse(SseEncoder.CONTENT_TYPE)) {
+        val encoder = EventEncoder(call.request.headers[HttpHeaders.Accept])
+        call.respondBytesWriter(contentType = ContentType.parse(encoder.getContentType())) {
             var terminalSeen = false
             try {
                 agent.run(input).verifyEvents().collect { event ->
-                    writeStringUtf8(SseEncoder.encode(event))
+                    writeStringUtf8(encoder.encode(event))
                     flush()
                     if (event.eventType == EventType.RUN_FINISHED || event.eventType == EventType.RUN_ERROR) {
                         terminalSeen = true
@@ -63,7 +69,7 @@ fun Route.aguiEndpoint(path: String = "/agents/{agentId}/run", agent: AgUiAgent)
                 // the agent has not already forwarded a terminal event (avoid a double
                 // terminal that a verifyEvents-running client would reject).
                 if (!terminalSeen) {
-                    writeStringUtf8(SseEncoder.encode(EventFactory.runError(t.message ?: t.toString())))
+                    writeStringUtf8(encoder.encode(EventFactory.runError(t.message ?: t.toString())))
                     flush()
                 }
             }

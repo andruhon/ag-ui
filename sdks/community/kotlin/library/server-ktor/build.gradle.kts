@@ -31,6 +31,7 @@ java {
 dependencies {
     api(project(":kotlin-server"))
     implementation(project(":kotlin-core"))
+    implementation(project(":kotlin-encoder"))
 
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
