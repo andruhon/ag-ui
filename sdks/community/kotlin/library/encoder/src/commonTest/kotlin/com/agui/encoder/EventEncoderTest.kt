@@ -43,4 +43,18 @@ class EventEncoderTest {
         assertTrue(encoded.startsWith("data: "), "must start with 'data: '")
         assertTrue(encoded.endsWith("\n\n"), "must end with a blank line")
     }
+
+    @Test
+    fun encodeToJsonProducesUnframedBody() {
+        // No "data: " prefix and no trailing blank line — just the compact JSON body.
+        assertEquals(expectedJson, EventEncoder().encodeToJson(event))
+    }
+
+    @Test
+    fun encodeSseWrapsEncodeToJson() {
+        // encodeSSE is exactly the framed form of encodeToJson (for self-framing transports the
+        // body-only path must yield the same JSON the SSE path carries).
+        val encoder = EventEncoder()
+        assertEquals("data: ${encoder.encodeToJson(event)}\n\n", encoder.encodeSSE(event))
+    }
 }

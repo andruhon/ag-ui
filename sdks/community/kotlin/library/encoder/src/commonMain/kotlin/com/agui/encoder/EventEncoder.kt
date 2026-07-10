@@ -24,7 +24,19 @@ class EventEncoder(private val accept: String? = null) {
 
     /** Canonical SSE framing: `data: {json}\n\n`. Mirrors TS `encodeSSE`. */
     fun encodeSSE(event: BaseEvent): String =
-        "data: " + AgUiJson.encodeToString(event) + "\n\n"
+        "data: " + encodeToJson(event) + "\n\n"
+
+    /**
+     * The JSON wire body for [event], with **no** SSE framing.
+     *
+     * Use this from transports that add their own framing — e.g. Spring MVC's `SseEmitter` or
+     * Jakarta's `SseEventSink`, which prefix `data:` and append the blank line themselves. Pairing
+     * such a transport with [encode]/[encodeSSE] would double-frame the stream; hand it
+     * [encodeToJson] instead so the SDK stays the single serialization entry point (no need for the
+     * consumer to reach past the encoder to [AgUiJson]/`BaseEvent.serializer()` directly). For raw
+     * byte streaming (FastAPI-style `StreamingResponse`, Ktor `respondBytesWriter`) use [encode].
+     */
+    fun encodeToJson(event: BaseEvent): String = AgUiJson.encodeToString(event)
 
     companion object {
         const val SSE_CONTENT_TYPE: String = "text/event-stream"
